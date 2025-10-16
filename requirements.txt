@@ -1,0 +1,16 @@
+streamlit
+pandas
+numpy
+requests
+yfinance
+transformers
+gym
+stable-baselines3
+shap
+tensorflow
+tf-keras
+lime
+newsapi-python
+nltk
+praw
+beautifulsoup4
