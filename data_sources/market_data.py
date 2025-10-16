@@ -123,7 +123,7 @@ class MarketDataFetcher:
 
             # Try to get performance data, but fallback to predefined list if it fails
             try:
-                data = yf.download(tickers, period="1mo", progress=False)['Close']
+                data = yf.download(tickers, period="1mo", progress=False, auto_adjust=False)['Close']
                 returns = data.pct_change(fill_method=None).mean().sort_values(ascending=False)
                 result = returns.dropna().head(top_n).index.tolist()
                 if result:  # If we got results, return them
@@ -177,14 +177,40 @@ class MarketDataFetcher:
                 continue
             try:
                 stock = yf.Ticker(ticker)
-                info = stock.info
+                # Prefer fast_info for reliability
+                fi = getattr(stock, 'fast_info', None)
+                try:
+                    fi = dict(fi) if fi is not None else {}
+                except Exception:
+                    fi = {}
+
+                price = fi.get('last_price') or fi.get('lastPrice')
+                volume = fi.get('last_volume') or fi.get('volume')
+                pe_ratio = fi.get('trailing_pe') or fi.get('trailingPE')
+                market_cap = fi.get('market_cap') or fi.get('marketCap')
+
+                # If still missing, try the slower info path
+                if price is None or market_cap is None or pe_ratio is None:
+                    try:
+                        info = stock.info
+                    except Exception:
+                        info = {}
+                    price = price if price is not None else info.get('currentPrice')
+                    volume = volume if volume is not None else info.get('regularMarketVolume')
+                    pe_ratio = pe_ratio if pe_ratio is not None else info.get('trailingPE')
+                    market_cap = market_cap if market_cap is not None else info.get('marketCap')
+                    sector = info.get('sector', 'Unknown')
+                else:
+                    sector = 'Unknown'
+
                 quotes[ticker] = {
-                    'price': info.get('currentPrice'),
-                    'volume': info.get('regularMarketVolume'),
-                    'pe_ratio': info.get('trailingPE'),
-                    'market_cap': info.get('marketCap'),
-                    'sector': info.get('sector', 'Unknown')
+                    'price': price,
+                    'volume': volume,
+                    'pe_ratio': pe_ratio,
+                    'market_cap': market_cap,
+                    'sector': sector
                 }
+                time.sleep(0.15)
             except Exception as e:
                 self.logger.warning(f"yfinance fallback failed for {ticker}: {str(e)}")
                 quotes[ticker] = {}
