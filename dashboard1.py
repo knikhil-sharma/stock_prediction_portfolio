@@ -669,20 +669,23 @@ def get_sector_sentiments(tickers):
     return pd.Series(news_scores), pd.Series(reddit_scores)
 
 def display_sector_overview(tickers):
+    # Fetch quotes once to avoid rate limits and repeated network calls
+    quotes = market.get_realtime_quotes(tickers)
     cols = st.columns(5)
     for i, ticker in enumerate(tickers):
         if i < len(cols):
             with cols[i]:
                 company_name = get_company_name(ticker)
-                display_stock_card(ticker, company_name)
+                display_stock_card(ticker, company_name, quotes.get(ticker, {}))
 
 def create_rl_state(avg_return, risk_level, horizon, sentiment):
     """Create 4-element state vector matching model expectations"""
     return np.array([float(avg_return), float(risk_level), float(horizon), float(sentiment)])
 
-def display_stock_card(ticker, company_name):
+def display_stock_card(ticker, company_name, quote=None):
     try:
-        quote = market.get_realtime_quotes([ticker])[ticker]
+        if quote is None:
+            quote = market.get_realtime_quotes([ticker])[ticker]
         with st.container():
             st.subheader(f"{company_name} ({ticker})")
             price = quote.get('price')

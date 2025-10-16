@@ -144,9 +144,14 @@ class MarketDataFetcher:
 
         # 1) Try Yahoo Finance public quote API (batch)
         try:
+            # Yahoo occasionally blocks requests without common headers
             url = "https://query1.finance.yahoo.com/v7/finance/quote"
             params = {"symbols": ",".join(tickers)}
-            headers = {"User-Agent": "Mozilla/5.0"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.9"
+            }
             response = requests.get(url, params=params, headers=headers, timeout=10)
             response.raise_for_status()
             results = response.json().get("quoteResponse", {}).get("result", [])
