@@ -184,6 +184,26 @@ class MarketDataFetcher:
                 self.logger.warning(f"yfinance fallback failed for {ticker}: {str(e)}")
                 quotes[ticker] = {}
 
+        # 3) Final fallback: derive price/volume from recent historical data
+        for ticker in tickers:
+            q = quotes.get(ticker) or {}
+            has_price = isinstance(q.get('price'), (int, float)) and q.get('price') is not None
+            has_volume = isinstance(q.get('volume'), (int, float)) and q.get('volume') is not None
+            if has_price and has_volume:
+                continue
+            try:
+                hist = yf.download(ticker, period="5d", interval="1d", progress=False)
+                if not hist.empty:
+                    last = hist.dropna().iloc[-1]
+                    q.setdefault('price', float(last.get('Close')) if 'Close' in last else None)
+                    q.setdefault('volume', int(last.get('Volume')) if 'Volume' in last else None)
+                    q.setdefault('pe_ratio', q.get('pe_ratio'))
+                    q.setdefault('market_cap', q.get('market_cap'))
+                    q.setdefault('sector', q.get('sector', 'Unknown'))
+                    quotes[ticker] = q
+            except Exception as e:
+                self.logger.warning(f"historical fallback failed for {ticker}: {str(e)}")
+
         return quotes
     
     def get_sector_performance(self) -> pd.DataFrame:
