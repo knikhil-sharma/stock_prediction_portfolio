@@ -140,8 +140,36 @@ class MarketDataFetcher:
 
     def get_realtime_quotes(self, tickers: list) -> Dict[str, Dict]:
         """Get real-time quotes with failover handling"""
-        quotes = {}
+        quotes: Dict[str, Dict] = {t: {} for t in tickers}
+
+        # 1) Try Yahoo Finance public quote API (batch)
+        try:
+            url = "https://query1.finance.yahoo.com/v7/finance/quote"
+            params = {"symbols": ",".join(tickers)}
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            response.raise_for_status()
+            results = response.json().get("quoteResponse", {}).get("result", [])
+            by_symbol = {item.get("symbol"): item for item in results}
+
+            for t in tickers:
+                item = by_symbol.get(t)
+                if not item:
+                    continue
+                quotes[t] = {
+                    'price': item.get('regularMarketPrice'),
+                    'volume': item.get('regularMarketVolume'),
+                    'pe_ratio': item.get('trailingPE'),
+                    'market_cap': item.get('marketCap'),
+                    'sector': item.get('sector') or 'Unknown'
+                }
+        except Exception as e:
+            self.logger.warning(f"Yahoo quote API failed: {str(e)}")
+
+        # 2) Fallback per-ticker via yfinance for any missing entries
         for ticker in tickers:
+            if quotes.get(ticker):
+                continue
             try:
                 stock = yf.Ticker(ticker)
                 info = stock.info
@@ -153,8 +181,9 @@ class MarketDataFetcher:
                     'sector': info.get('sector', 'Unknown')
                 }
             except Exception as e:
-                self.logger.warning(f"Failed to get real-time data for {ticker}: {str(e)}")
+                self.logger.warning(f"yfinance fallback failed for {ticker}: {str(e)}")
                 quotes[ticker] = {}
+
         return quotes
     
     def get_sector_performance(self) -> pd.DataFrame:

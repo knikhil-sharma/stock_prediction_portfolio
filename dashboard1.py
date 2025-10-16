@@ -685,9 +685,12 @@ def display_stock_card(ticker, company_name):
         quote = market.get_realtime_quotes([ticker])[ticker]
         with st.container():
             st.subheader(f"{company_name} ({ticker})")
-            st.metric("Price", f"${quote.get('price', 'N/A'):.2f}")
-            st.metric("PE Ratio", f"{quote.get('pe_ratio', 'N/A'):.2f}")
-            st.metric("Market Cap", f"${quote.get('market_cap', 0):,.2f}")
+            price = quote.get('price')
+            pe = quote.get('pe_ratio')
+            mcap = quote.get('market_cap')
+            st.metric("Price", f"${price:.2f}" if isinstance(price, (int, float)) else "N/A")
+            st.metric("PE Ratio", f"{pe:.2f}" if isinstance(pe, (int, float)) else "N/A")
+            st.metric("Market Cap", f"${mcap:,.0f}" if isinstance(mcap, (int, float)) else "N/A")
     except Exception as e:
         st.error(f"Could not fetch data for {ticker}")
 
