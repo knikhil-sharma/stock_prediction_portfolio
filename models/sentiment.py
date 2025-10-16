@@ -13,35 +13,62 @@ class SentimentAnalyzer:
     """Multi-source sentiment analysis with XAI integration"""
     
     def __init__(self, news_api_key: str, reddit_config: Dict):
-        self.vader = SentimentIntensityAnalyzer()
-        self.finbert = pipeline("text-classification", 
-                              model="yiyanghkust/finbert-tone")
-        self.news_client = NewsApiClient(api_key=news_api_key)
-        self.reddit = praw.Reddit(**reddit_config)
+        try:
+            self.vader = SentimentIntensityAnalyzer()
+        except Exception as e:
+            print(f"Warning: Could not initialize VADER: {e}")
+            self.vader = None
+            
+        try:
+            self.finbert = pipeline("text-classification", 
+                                  model="yiyanghkust/finbert-tone")
+        except Exception as e:
+            print(f"Warning: Could not initialize FinBERT: {e}")
+            self.finbert = None
+            
+        try:
+            self.news_client = NewsApiClient(api_key=news_api_key)
+        except Exception as e:
+            print(f"Warning: Could not initialize News API: {e}")
+            self.news_client = None
+            
+        try:
+            self.reddit = praw.Reddit(**reddit_config)
+        except Exception as e:
+            print(f"Warning: Could not initialize Reddit: {e}")
+            self.reddit = None
         self.lime_explainer = LimeTextExplainer(class_names=['negative', 'positive'])
 
     def analyze_news_sentiment(self, query: str) -> pd.DataFrame:
         """Analyze news sentiment with source tracking"""
-        articles = self.news_client.get_everything(
-            q=query,
-            language='en',
-            page_size=50
-        )['articles']
+        if self.news_client is None:
+            return pd.DataFrame({'vader': [0.0], 'source': ['demo']})
+            
+        try:
+            articles = self.news_client.get_everything(
+                q=query,
+                language='en',
+                page_size=50
+            )['articles']
         
         return pd.DataFrame([{
             'source': a['source']['name'],
-            'vader': self.vader.polarity_scores(f"{a['title']}. {a.get('description','')}")['compound'],
+            'vader': self.vader.polarity_scores(f"{a['title']}. {a.get('description','')}")['compound'] if self.vader else 0.0,
             'finbert': self._get_finbert_score(f"{a['title']}. {a.get('description','')}"),
             'url': a['url']
         } for a in articles])
 
     def analyze_reddit_sentiment(self, query: str) -> pd.DataFrame:
         """Analyze Reddit sentiment with temporal features"""
-        posts = self.reddit.subreddit('stocks').search(query, limit=100)
+        if self.reddit is None:
+            return pd.DataFrame({'vader': [0.0], 'source': ['demo']})
+            
+        try:
+            posts = list(self.reddit.subreddit('stocks').search(query, limit=100))
         
         return pd.DataFrame([{
             'created_utc': post.created_utc,
-            'vader': self.vader.polarity_scores(f"{post.title} {post.selftext}")['compound'],
+            'vader': self.vader.polarity_scores(f"{post.title} {post.selftext}")['compound'] if self.vader else 0.0,
             'finbert': self._get_finbert_score(f"{post.title} {post.selftext}"),
             'url': f"https://reddit.com{post.permalink}"
         } for post in posts])
@@ -59,5 +86,10 @@ class SentimentAnalyzer:
     )
 
     def _get_finbert_score(self, text: str) -> float:
-        result = self.finbert(text[:512])[0]
-        return result['score'] if result['label'] == 'positive' else -result['score']
+        if self.finbert is None:
+            return 0.0
+        try:
+            result = self.finbert(text[:512])[0]
+            return result['score'] if result['label'] == 'positive' else -result['score']
+        except Exception:
+            return 0.0

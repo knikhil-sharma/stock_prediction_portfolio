@@ -8,6 +8,15 @@ import shap
 import logging
 import tensorflow as tf
 import streamlit as st
+import nltk
+
+# Download required NLTK data
+try:
+    nltk.download('vader_lexicon', quiet=True)
+    nltk.download('punkt', quiet=True)
+    nltk.download('stopwords', quiet=True)
+except Exception as e:
+    st.warning(f"Could not download NLTK data: {str(e)}")
 
 st.set_page_config(
     page_title="AI Portfolio Advisor",
