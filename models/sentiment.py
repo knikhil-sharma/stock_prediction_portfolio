@@ -5,8 +5,16 @@ from newsapi import NewsApiClient
 import pandas as pd
 from typing import Dict
 import numpy as np
-from lime.lime_text import LimeTextExplainer
-from lime.explanation import Explanation 
+
+# Optional imports with fallbacks
+try:
+    from lime.lime_text import LimeTextExplainer
+    from lime.explanation import Explanation
+    LIME_AVAILABLE = True
+except ImportError:
+    LIME_AVAILABLE = False
+    LimeTextExplainer = None
+    Explanation = None 
 
 
 class SentimentAnalyzer:
@@ -37,7 +45,16 @@ class SentimentAnalyzer:
         except Exception as e:
             print(f"Warning: Could not initialize Reddit: {e}")
             self.reddit = None
-        self.lime_explainer = LimeTextExplainer(class_names=['negative', 'positive'])
+            
+        # Initialize LIME explainer if available
+        if LIME_AVAILABLE:
+            try:
+                self.lime_explainer = LimeTextExplainer(class_names=['negative', 'positive'])
+            except Exception as e:
+                print(f"Warning: Could not initialize LIME: {e}")
+                self.lime_explainer = None
+        else:
+            self.lime_explainer = None
 
     def analyze_news_sentiment(self, query: str) -> pd.DataFrame:
         """Analyze news sentiment with source tracking"""
@@ -50,13 +67,16 @@ class SentimentAnalyzer:
                 language='en',
                 page_size=50
             )['articles']
-        
-        return pd.DataFrame([{
-            'source': a['source']['name'],
-            'vader': self.vader.polarity_scores(f"{a['title']}. {a.get('description','')}")['compound'] if self.vader else 0.0,
-            'finbert': self._get_finbert_score(f"{a['title']}. {a.get('description','')}"),
-            'url': a['url']
-        } for a in articles])
+            
+            return pd.DataFrame([{
+                'source': a['source']['name'],
+                'vader': self.vader.polarity_scores(f"{a['title']}. {a.get('description','')}")['compound'] if self.vader else 0.0,
+                'finbert': self._get_finbert_score(f"{a['title']}. {a.get('description','')}"),
+                'url': a['url']
+            } for a in articles])
+        except Exception as e:
+            print(f"Warning: News analysis failed: {e}")
+            return pd.DataFrame({'vader': [0.0], 'source': ['demo']})
 
     def analyze_reddit_sentiment(self, query: str) -> pd.DataFrame:
         """Analyze Reddit sentiment with temporal features"""
@@ -65,25 +85,35 @@ class SentimentAnalyzer:
             
         try:
             posts = list(self.reddit.subreddit('stocks').search(query, limit=100))
-        
-        return pd.DataFrame([{
-            'created_utc': post.created_utc,
-            'vader': self.vader.polarity_scores(f"{post.title} {post.selftext}")['compound'] if self.vader else 0.0,
-            'finbert': self._get_finbert_score(f"{post.title} {post.selftext}"),
-            'url': f"https://reddit.com{post.permalink}"
-        } for post in posts])
+            
+            return pd.DataFrame([{
+                'created_utc': post.created_utc,
+                'vader': self.vader.polarity_scores(f"{post.title} {post.selftext}")['compound'] if self.vader else 0.0,
+                'finbert': self._get_finbert_score(f"{post.title} {post.selftext}"),
+                'url': f"https://reddit.com{post.permalink}"
+            } for post in posts])
+        except Exception as e:
+            print(f"Warning: Reddit analysis failed: {e}")
+            return pd.DataFrame({'vader': [0.0], 'source': ['demo']})
 
-    def explain_sentiment(self, text: str) -> Explanation:
+    def explain_sentiment(self, text: str):
         """Generate LIME explanation for sentiment prediction"""
+        if self.lime_explainer is None:
+            return None
+            
         def predict_proba(texts):
-            return np.array([[self.vader.polarity_scores(t)['compound']] 
+            return np.array([[self.vader.polarity_scores(t)['compound'] if self.vader else 0.0] 
                        for t in texts])
     
-        return self.lime_explainer.explain_instance(
-        text,
-        predict_proba,
-        num_features=10
-    )
+        try:
+            return self.lime_explainer.explain_instance(
+                text,
+                predict_proba,
+                num_features=10
+            )
+        except Exception as e:
+            print(f"Warning: Could not generate LIME explanation: {e}")
+            return None
 
     def _get_finbert_score(self, text: str) -> float:
         if self.finbert is None:
